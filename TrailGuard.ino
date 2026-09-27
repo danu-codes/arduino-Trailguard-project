@@ -17,14 +17,11 @@ RouteManager   routeManager;
 BuzzerManager  buzzer(BUZZER_PIN);
 TempManager    tempSensor(DHT_PIN, DHT22);
 
-// --- Button Timing & Power Variables ---
-unsigned long powerBtnPressStart = 0;
-bool powerBtnPressed = false;
-
-// Debounce helpers
-unsigned long lastNavBtnTime = 0;
+// Dedicated Button Timing Variables (Separated to prevent interference)
+unsigned long lastMenuBtnTime = 0;
+unsigned long lastNavBtnTime  = 0;
 unsigned long lastActionBtnTime = 0;
-const unsigned long DEBOUNCE_DELAY = 200; // ms
+const unsigned long DEBOUNCE_DELAY = 250; // ms
 
 // Helper to resume active state when menu is exited
 void resumeActiveScreen() {
@@ -81,7 +78,7 @@ void setup() {
 }
 
 void loop() {
-  // --- 1. Background Updates (Always run regardless of Menu) ---
+  // --- 1. Background Updates ---
   gpsManager.update();
   motion.update();
   buzzer.update();
@@ -109,14 +106,17 @@ void loop() {
 
   // --- 3. Keypad & Input Handling ---
 
-  // A. MENU TOGGLE BUTTON
-  if (digitalRead(BTN_MENU_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
-    lastNavBtnTime = now;
+  // A. DEDICATED MENU TOGGLE BUTTON
+  if (digitalRead(BTN_MENU_PIN) == LOW && (now - lastMenuBtnTime > DEBOUNCE_DELAY)) {
+    lastMenuBtnTime = now;
     buzzer.playClick();
+    
     if (display.isMenuOpen()) {
       resumeActiveScreen(); 
+      Serial.println("[INPUT] Closing Menu...");
     } else {
       display.toggleMenu(); 
+      Serial.println("[INPUT] Opening Menu...");
     }
   }
 
@@ -131,7 +131,7 @@ void loop() {
     }
   }
 
-  // C. MENU NAVIGATION CONTROLS (Active when Menu is Open)
+  // C. MENU NAVIGATION CONTROLS (Active strictly when Menu is Open)
   if (display.isMenuOpen()) {
     if (digitalRead(BTN_UP_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
       lastNavBtnTime = now;
@@ -166,9 +166,9 @@ void loop() {
       display.closeMenu();
     }
   } 
-  // D. QUICK DIRECT CONTROLS (Active when Menu is Closed)
+  // D. QUICK DIRECT CONTROLS (Active strictly when Menu is Closed)
   else {
-    // START / STOP TRIP (Trail Recording Toggle)
+    // START / STOP TRIP
     if (digitalRead(BTN_TRIP_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
       if (!routeManager.isRecording()) {
@@ -182,7 +182,7 @@ void loop() {
       }
     }
 
-    // RETURN TRIP (Backtrack Mode Toggle)
+    // RETURN TRIP
     if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
       if (!routeManager.isReturnMode()) {
@@ -196,7 +196,6 @@ void loop() {
           display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
-        // STOP Return Mode & Go straight back to Home (GPS) Screen!
         routeManager.stopReturnMode();
         buzzer.playClick();
         display.setScreen(SCREEN_GPS); 
@@ -214,13 +213,10 @@ void loop() {
     String currentHum  = tempSensor.getHumidityString();
     bool offCourseState = routeManager.isOffCourse(currentPos.latitude, currentPos.longitude);
 
-    // If Menu is active, draw Menu overlay
+    // Render Menu if open, otherwise active screen
     if (display.isMenuOpen()) {
       display.renderMenu();
-    } 
-    // Otherwise render active screen
-    else {
-      // Auto switch back to Return screen if off-course alert fires during Return Mode
+    } else {
       if (offCourseState && routeManager.isReturnMode() && display.getCurrentScreen() != SCREEN_RETURN) {
         display.setScreen(SCREEN_RETURN);
       }
@@ -229,19 +225,15 @@ void loop() {
         case SCREEN_GPS:
           display.renderGPS(currentPos, currentTemp, currentHum);
           break;
-
         case SCREEN_IMU:
           display.renderIMU(motion.getData(), currentTemp, currentHum);
           break;
-
         case SCREEN_TEMP:
           display.renderTempScreen(currentTemp, currentHum);
           break;
-
         case SCREEN_SYSTEM:
           display.renderSystemInfo(currentTemp, currentHum);
           break;
-
         case SCREEN_RETURN:
           display.renderReturnNav(
             routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),

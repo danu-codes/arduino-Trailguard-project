@@ -11,11 +11,12 @@ DisplayManager::DisplayManager()
     _menuIndex(0) {}
 
 bool DisplayManager::begin(uint8_t i2cAddress) {
-  if (!_display.begin(SSD1306_SWITCHCAPVCC, i2cAddress)) {
+  // SH1106 init takes (address, reset_pin_state)
+  if (!_display.begin(i2cAddress, true)) {
     return false;
   }
   _display.clearDisplay();
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Set default foreground & background
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
   _display.display();
   return true;
@@ -63,24 +64,23 @@ MenuOption DisplayManager::getSelectedMenuOption() const {
 }
 
 void DisplayManager::drawHeader(const char* title, const String& temp, const String& hum) {
-  // Always reset default text colors at the start of header rendering
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); 
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
   _display.setCursor(0, 0);
   _display.print(title);
 
   _display.setCursor(85, 0);
   _display.print(temp);
-  _display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
 }
 
 void DisplayManager::renderMenu() {
   _display.clearDisplay();
   _display.setTextSize(1);
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setCursor(35, 0);
   _display.print("= MENU =");
-  _display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
 
   const char* options[] = {
     "1. GPS Coordinates",
@@ -92,16 +92,16 @@ void DisplayManager::renderMenu() {
   for (uint8_t i = 0; i < MENU_OPTION_COUNT; i++) {
     uint8_t y = 14 + (i * 12);
     if (i == _menuIndex) {
-      _display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
-      _display.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Inverted text for highlighted row
+      _display.fillRect(0, y - 1, 128, 11, SH110X_WHITE);
+      _display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     } else {
-      _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Normal white text
+      _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
     }
     _display.setCursor(4, y);
     _display.print(options[i]);
   }
 
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.display();
 }
 
@@ -121,12 +121,12 @@ void DisplayManager::renderTempScreen(const String& temp, const String& hum) {
 
 void DisplayManager::drawOffCourseBanner() {
   if ((millis() / 500) % 2 == 0) {
-    _display.fillRect(0, 12, 128, 12, SSD1306_WHITE);
-    _display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+    _display.fillRect(0, 12, 128, 12, SH110X_WHITE);
+    _display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     _display.setTextSize(1);
     _display.setCursor(18, 14);
     _display.print("! OFF COURSE !");
-    _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+    _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   }
 }
 
@@ -145,14 +145,14 @@ void DisplayManager::drawArrow(int16_t cx, int16_t cy, float angleDeg, int16_t r
   int16_t xWing2 = cx + cos(wingAngle2) * (radius * 0.6f);
   int16_t yWing2 = cy + sin(wingAngle2) * (radius * 0.6f);
 
-  _display.drawCircle(cx, cy, radius + 2, SSD1306_WHITE);
-  _display.drawLine(cx, cy, xTip, yTip, SSD1306_WHITE);
-  _display.fillTriangle(xTip, yTip, xWing1, yWing1, xWing2, yWing2, SSD1306_WHITE);
+  _display.drawCircle(cx, cy, radius + 2, SH110X_WHITE);
+  _display.drawLine(cx, cy, xTip, yTip, SH110X_WHITE);
+  _display.fillTriangle(xTip, yTip, xWing1, yWing1, xWing2, yWing2, SH110X_WHITE);
 }
 
 void DisplayManager::renderBootScreen() {
   _display.clearDisplay();
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(2);
   _display.setCursor(5, 15);
   _display.print("TRAILGUARD");
@@ -164,11 +164,11 @@ void DisplayManager::renderBootScreen() {
 
 void DisplayManager::renderMessage(const String& title, const String& msg, uint16_t delayMs) {
   _display.clearDisplay();
-  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
   _display.setCursor(0, 10);
   _display.println(title);
-  _display.drawFastHLine(0, 22, 128, SSD1306_WHITE);
+  _display.drawFastHLine(0, 22, 128, SH110X_WHITE);
   _display.setCursor(0, 32);
   _display.println(msg);
   _display.display();
