@@ -6,12 +6,11 @@
 
 DisplayManager::DisplayManager()
   : _display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1),
-    _currentScreen(SCREEN_GPS),
+    _currentScreen(SCREEN_HOME),
     _inMenu(false),
     _menuIndex(0) {}
 
 bool DisplayManager::begin(uint8_t i2cAddress) {
-  // SH1106 init takes (address, reset_pin_state)
   if (!_display.begin(i2cAddress, true)) {
     return false;
   }
@@ -31,11 +30,11 @@ ScreenState DisplayManager::getCurrentScreen() const {
 }
 
 void DisplayManager::nextScreen() {
-  _currentScreen = static_cast<ScreenState>((_currentScreen + 1) % 5);
+  _currentScreen = static_cast<ScreenState>((_currentScreen + 1) % 6);
 }
 
 void DisplayManager::previousScreen() {
-  _currentScreen = static_cast<ScreenState>((_currentScreen + 4) % 5);
+  _currentScreen = static_cast<ScreenState>((_currentScreen + 5) % 6);
 }
 
 // --- Menu Helpers ---
@@ -105,17 +104,99 @@ void DisplayManager::renderMenu() {
   _display.display();
 }
 
+// --- HOME SCREEN (Dashboard: Time, Temp/Hum, GPS Lock & BLE Status) ---
+void DisplayManager::renderHome(const GPSData& gps, const String& temp, const String& hum, bool bleConnected) {
+  _display.clearDisplay();
+  _display.setTextColor(SH110X_WHITE);
+
+  // 1. UTC TIME (BIG TEXT)
+  _display.setTextSize(2);
+  _display.setCursor(16, 2);
+  if (gps.fixValid) {
+    char timeBuffer[10];
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d", gps.hour, gps.minute, gps.second);
+    _display.print(timeBuffer);
+  } else {
+    _display.print("--:--:--");
+  }
+
+  _display.drawLine(0, 20, 128, 20, SH110X_WHITE);
+
+  // 2. TEMP & HUMIDITY
+  _display.setTextSize(1);
+  _display.setCursor(0, 24);
+  _display.printf("TMP:%s | HUM:%s", temp.c_str(), hum.c_str());
+
+  // 3. SATELLITE STATUS
+  _display.setCursor(0, 38);
+  if (gps.fixValid) {
+    _display.printf("SAT: %02d (3D LOCK)", gps.satellites);
+  } else {
+    _display.printf("SAT: %02d (SEARCHING)", gps.satellites);
+  }
+
+  // 4. BLE CONNECTION
+  _display.setCursor(0, 52);
+  if (bleConnected) {
+    _display.print("BLE: APP CONNECTED");
+  } else {
+    _display.print("BLE: DISCONNECTED");
+  }
+
+  _display.display();
+}
+
+// --- DEDICATED GPS COORDINATES SCREEN ---
+void DisplayManager::renderGPS(const GPSData& gps, const String& temp, const String& hum) {
+  _display.clearDisplay();
+  drawHeader("GPS COORDINATES", temp, hum);
+
+  _display.setCursor(0, 16);
+  _display.setTextSize(1);
+  if (gps.fixValid) {
+    _display.printf("Lat: %.5f\n", gps.latitude);
+    _display.printf("Lng: %.5f\n", gps.longitude);
+    _display.printf("Alt: %.1fm\n", gps.altitudeMeters);
+    _display.printf("Sats: %d\n", gps.satellites);
+  } else {
+    _display.println("Searching Signal...");
+    _display.printf("Sats Visible: %d\n", gps.satellites);
+  }
+  _display.display();
+}
+
+void DisplayManager::renderIMU(const MotionData& imu, const String& temp, const String& hum) {
+  _display.clearDisplay();
+  drawHeader("COMPASS / IMU", temp, hum);
+
+  _display.setCursor(0, 16);
+  _display.print("Heading: "); _display.print(imu.heading, 1); _display.println(" deg");
+  _display.print("Pitch:   "); _display.print(imu.pitch, 1); _display.println(" deg");
+  _display.print("Roll:    "); _display.print(imu.roll, 1); _display.println(" deg");
+  _display.print("Steps:   "); _display.println(imu.stepCount);
+  _display.display();
+}
+
 void DisplayManager::renderTempScreen(const String& temp, const String& hum) {
   _display.clearDisplay();
   drawHeader("ENVIRONMENT", temp, hum);
 
   _display.setCursor(0, 20);
   _display.setTextSize(1);
-  _display.print("Temperature : ");
-  _display.println(temp);
+  _display.print("Temperature : "); _display.println(temp);
   _display.println();
-  _display.print("Humidity    : ");
-  _display.println(hum);
+  _display.print("Humidity    : "); _display.println(hum);
+  _display.display();
+}
+
+void DisplayManager::renderSystemInfo(const String& temp, const String& hum) {
+  _display.clearDisplay();
+  drawHeader("SYSTEM STATUS", temp, hum);
+
+  _display.setCursor(0, 16);
+  _display.print("Temp: "); _display.println(temp);
+  _display.print("Hum:  "); _display.println(hum);
+  _display.print("Heap: "); _display.print(ESP.getFreeHeap() / 1024); _display.println(" KB");
   _display.display();
 }
 
@@ -177,62 +258,6 @@ void DisplayManager::renderMessage(const String& title, const String& msg, uint1
   }
 }
 
-void DisplayManager::renderGPS(const GPSData& gps, const String& temp, const String& hum) {
-  _display.clearDisplay();
-  drawHeader("GPS MONITOR", temp, hum);
-
-  _display.setCursor(0, 15);
-  if (gps.fixValid) {
-    _display.print("Lat: ");
-    _display.println(gps.latitude, 5);
-    _display.print("Lng: ");
-    _display.println(gps.longitude, 5);
-    _display.print("Alt: ");
-    _display.print(gps.altitudeMeters, 1);
-    _display.println("m");
-    _display.print("Sats: ");
-    _display.print(gps.satellites);
-    _display.print(" Speed: ");
-    _display.print(gps.speedKmh, 1);
-    _display.println("km/h");
-  } else {
-    _display.println("\n  Searching Sats...");
-    _display.print("  Sats Visible: ");
-    _display.println(gps.satellites);
-  }
-  _display.display();
-}
-
-void DisplayManager::renderIMU(const MotionData& imu, const String& temp, const String& hum) {
-  _display.clearDisplay();
-  drawHeader("COMPASS / IMU", temp, hum);
-
-  _display.setCursor(0, 16);
-  _display.print("Heading: ");
-  _display.print(imu.heading, 1);
-  _display.println(" deg");
-  _display.print("Pitch:   ");
-  _display.print(imu.pitch, 1);
-  _display.println(" deg");
-  _display.print("Roll:    ");
-  _display.print(imu.roll, 1);
-  _display.println(" deg");
-  _display.print("Steps:   ");
-  _display.println(imu.stepCount);
-  _display.display();
-}
-
-void DisplayManager::renderSystemInfo(const String& temp, const String& hum) {
-  _display.clearDisplay();
-  drawHeader("SYSTEM STATUS", temp, hum);
-
-  _display.setCursor(0, 16);
-  _display.print("Temp: "); _display.println(temp);
-  _display.print("Hum:  "); _display.println(hum);
-  _display.print("Heap: "); _display.print(ESP.getFreeHeap() / 1024); _display.println(" KB");
-  _display.display();
-}
-
 void DisplayManager::renderReturnNav(double distance, double bearing, double heading,
                                      uint16_t currentIdx, uint16_t totalIdx,
                                      const String& temp, const String& hum,
@@ -250,18 +275,11 @@ void DisplayManager::renderReturnNav(double distance, double bearing, double hea
   uint8_t startY = isOffCourse ? 26 : 16;
 
   _display.setCursor(0, startY);
-  _display.print("Dist: ");
-  _display.print(distance, 1);
-  _display.println("m");
+  _display.print("Dist: "); _display.print(distance, 1); _display.println("m");
   _display.setCursor(0, startY + 12);
-  _display.print("Brg:  ");
-  _display.print(bearing, 0);
-  _display.println(" deg");
+  _display.print("Brg:  "); _display.print(bearing, 0); _display.println(" deg");
   _display.setCursor(0, startY + 24);
-  _display.print("Pt:   ");
-  _display.print(currentIdx);
-  _display.print("/");
-  _display.println(totalIdx);
+  _display.print("Pt:   "); _display.print(currentIdx); _display.print("/"); _display.println(totalIdx);
 
   _display.display();
 }

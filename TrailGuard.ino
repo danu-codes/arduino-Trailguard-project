@@ -8,6 +8,7 @@
 #include "src/RouteManager.h"
 #include "src/BuzzerManager.h"
 #include "src/TempManager.h"
+#include "src/BLEManager.h"
 
 // --- Global Manager Instances ---
 DisplayManager display;
@@ -15,13 +16,14 @@ MotionManager  motion;
 GPSManager     gpsManager;
 RouteManager   routeManager;
 BuzzerManager  buzzer(BUZZER_PIN);
-TempManager    tempSensor(DHT_PIN, DHT22);
+TempManager    tempSensor(DHT_PIN, DHT11);
+BLEManager     bleManager;
 
-// Dedicated Button Timing Variables (Separated to prevent interference)
+// Dedicated Button Timing Variables
 unsigned long lastMenuBtnTime = 0;
-unsigned long lastNavBtnTime  = 0;
+unsigned long lastNavBtnTime = 0;
 unsigned long lastActionBtnTime = 0;
-const unsigned long DEBOUNCE_DELAY = 250; // ms
+const unsigned long DEBOUNCE_DELAY = 250;  // ms
 
 // Helper to resume active state when menu is exited
 void resumeActiveScreen() {
@@ -29,7 +31,7 @@ void resumeActiveScreen() {
   if (routeManager.isReturnMode()) {
     display.setScreen(SCREEN_RETURN);
   } else {
-    display.setScreen(SCREEN_GPS);
+    display.setScreen(SCREEN_HOME);
   }
 }
 
@@ -43,7 +45,7 @@ void setup() {
   pinMode(LED_BLE_PIN, OUTPUT);
   pinMode(LED_BAT_PIN, OUTPUT);
 
-  // Keypad Pins Setup (7 Buttons)
+  // Keypad Pins Setup
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
   pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
   pinMode(BTN_OK_PIN, INPUT_PULLUP);
@@ -74,6 +76,9 @@ void setup() {
   gpsManager.begin(GPS_RX_PIN, GPS_TX_PIN, 9600);
   tempSensor.begin();
 
+  // Bluetooth Low Energy
+  bleManager.begin("TrailGuard-S3");
+
   Serial.println("[SYSTEM] Boot complete. Ready for navigation.");
 }
 
@@ -86,6 +91,11 @@ void loop() {
 
   GPSData currentPos = gpsManager.getData();
   unsigned long now = millis();
+
+  // BLE Update & Status LED indicator
+  bleManager.update(currentPos);
+  digitalWrite(LED_BLE_PIN, bleManager.isConnected() ? HIGH : LOW);
+  digitalWrite(LED_GPS_PIN, currentPos.fixValid ? HIGH : LOW);
 
   // --- 2. Background Breadcrumb Logging & Nav Rules ---
   if (routeManager.isRecording() && currentPos.fixValid) {
@@ -106,32 +116,36 @@ void loop() {
 
   // --- 3. Keypad & Input Handling ---
 
-  // A. DEDICATED MENU TOGGLE BUTTON
+  // A. MENU TOGGLE BUTTON
   if (digitalRead(BTN_MENU_PIN) == LOW && (now - lastMenuBtnTime > DEBOUNCE_DELAY)) {
     lastMenuBtnTime = now;
     buzzer.playClick();
-    
+
     if (display.isMenuOpen()) {
-      resumeActiveScreen(); 
-      Serial.println("[INPUT] Closing Menu...");
+      resumeActiveScreen();
     } else {
-      display.toggleMenu(); 
-      Serial.println("[INPUT] Opening Menu...");
+      display.toggleMenu();
     }
   }
 
-  // B. BACK BUTTON (Exits menu or returns home)
+  // B. BACK BUTTON (Smart Navigation)
   if (digitalRead(BTN_BACK_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
+
     if (display.isMenuOpen()) {
-      resumeActiveScreen(); 
+      // Menu -> Exit to active screen (HOME or RETURN)
+      resumeActiveScreen();
+    } else if (display.getCurrentScreen() != SCREEN_HOME && display.getCurrentScreen() != SCREEN_RETURN) {
+      // Submenu screen -> Return to Menu pointing at previous selected item
+      display.toggleMenu();
     } else {
-      display.setScreen(SCREEN_GPS); // Return to home screen
+      // Home screen -> Ensure SCREEN_HOME active
+      display.setScreen(SCREEN_HOME);
     }
   }
 
-  // C. MENU NAVIGATION CONTROLS (Active strictly when Menu is Open)
+  // C. MENU NAVIGATION CONTROLS (When Menu is Open)
   if (display.isMenuOpen()) {
     if (digitalRead(BTN_UP_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
       lastNavBtnTime = now;
@@ -165,8 +179,8 @@ void loop() {
       }
       display.closeMenu();
     }
-  } 
-  // D. QUICK DIRECT CONTROLS (Active strictly when Menu is Closed)
+  }
+  // D. DIRECT CONTROLS (When Menu is Closed)
   else {
     // START / STOP TRIP
     if (digitalRead(BTN_TRIP_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
@@ -198,7 +212,7 @@ void loop() {
       } else {
         routeManager.stopReturnMode();
         buzzer.playClick();
-        display.setScreen(SCREEN_GPS); 
+        display.setScreen(SCREEN_HOME);
         display.renderMessage("BACKTRACK NAV", "Return Stopped.", 1000);
       }
     }
@@ -210,10 +224,9 @@ void loop() {
     lastRender = now;
 
     String currentTemp = tempSensor.getTempString();
-    String currentHum  = tempSensor.getHumidityString();
+    String currentHum = tempSensor.getHumidityString();
     bool offCourseState = routeManager.isOffCourse(currentPos.latitude, currentPos.longitude);
 
-    // Render Menu if open, otherwise active screen
     if (display.isMenuOpen()) {
       display.renderMenu();
     } else {
@@ -222,18 +235,26 @@ void loop() {
       }
 
       switch (display.getCurrentScreen()) {
+        case SCREEN_HOME:
+          display.renderHome(currentPos, currentTemp, currentHum, bleManager.isConnected());
+          break;
+
         case SCREEN_GPS:
           display.renderGPS(currentPos, currentTemp, currentHum);
           break;
+
         case SCREEN_IMU:
           display.renderIMU(motion.getData(), currentTemp, currentHum);
           break;
+
         case SCREEN_TEMP:
           display.renderTempScreen(currentTemp, currentHum);
           break;
+
         case SCREEN_SYSTEM:
           display.renderSystemInfo(currentTemp, currentHum);
           break;
+
         case SCREEN_RETURN:
           display.renderReturnNav(
             routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),
@@ -243,8 +264,7 @@ void loop() {
             routeManager.getPointCount(),
             currentTemp,
             currentHum,
-            offCourseState
-          );
+            offCourseState);
           break;
       }
     }

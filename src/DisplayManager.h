@@ -4,12 +4,13 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h> // Changed to SH110X library
+#include <Adafruit_SH110X.h>
 #include "GPSManager.h"
 #include "MotionManager.h"
 
 enum ScreenState {
-  SCREEN_GPS,
+  SCREEN_HOME,       // <--- Dedicated Home Screen
+  SCREEN_GPS,        // Raw Coordinates Screen
   SCREEN_IMU,
   SCREEN_TEMP,
   SCREEN_SYSTEM,
@@ -28,7 +29,7 @@ class DisplayManager {
 public:
   DisplayManager();
   bool begin(uint8_t i2cAddress = 0x3C);
-  
+
   void setScreen(ScreenState screen);
   ScreenState getCurrentScreen() const;
   void nextScreen();
@@ -46,6 +47,9 @@ public:
   void renderBootScreen();
   void renderMessage(const String& title, const String& msg, uint16_t delayMs = 0);
   void renderMenu();
+  
+  // Render Screens
+  void renderHome(const GPSData& gps, const String& temp, const String& hum, bool bleConnected);
   void renderGPS(const GPSData& gps, const String& temp, const String& hum);
   void renderIMU(const MotionData& imu, const String& temp, const String& hum);
   void renderTempScreen(const String& temp, const String& hum);
@@ -56,7 +60,7 @@ public:
                        bool isOffCourse);
 
 private:
-  Adafruit_SH1106G _display; // Changed from SSD1306 to SH1106G
+  Adafruit_SH1106G _display;
   ScreenState _currentScreen;
   bool _inMenu;
   uint8_t _menuIndex;
@@ -66,4 +70,4 @@ private:
   void drawOffCourseBanner();
 };
 
-#endif // DISPLAY_MANAGER_H
+#endif  // DISPLAY_MANAGER_H

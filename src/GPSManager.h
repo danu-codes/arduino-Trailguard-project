@@ -2,15 +2,18 @@
 #define GPS_MANAGER_H
 
 #include <Arduino.h>
+#include <HardwareSerial.h>
 #include <TinyGPS++.h>
 
 struct GPSData {
-  bool fixValid;
-  double latitude;
-  double longitude;
-  double altitudeMeters;
-  uint32_t satellites;
-  float speedKmh;
+  float latitude = 0.0;
+  float longitude = 0.0;
+  float altitudeMeters = 0.0;
+  uint8_t satellites = 0;
+  bool fixValid = false;
+  uint8_t hour = 0;
+  uint8_t minute = 0;
+  uint8_t second = 0;
 };
 
 class GPSManager {
@@ -22,7 +25,7 @@ public:
 
 private:
   HardwareSerial _gpsSerial;
-  TinyGPSPlus _parser;
+  TinyGPSPlus _gps;
   GPSData _data;
 };
 
