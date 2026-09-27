@@ -1,6 +1,6 @@
 #include "GPSManager.h"
 
-GPSManager::GPSManager() : _gpsSerial(2) {} // HardwareSerial 2 on ESP32
+GPSManager::GPSManager() : _gpsSerial(2) {}
 
 void GPSManager::begin(uint8_t rxPin, uint8_t txPin, uint32_t baudRate) {
   _gpsSerial.begin(baudRate, SERIAL_8N1, rxPin, txPin);
@@ -25,6 +25,13 @@ void GPSManager::update() {
   // --- Altitude Data ---
   if (_gps.altitude.isValid()) {
     _data.altitudeMeters = _gps.altitude.meters();
+  }
+
+  // --- Movement Speed (km/h) ---
+  if (_gps.speed.isValid()) {
+    _data.speedKmh = _gps.speed.kmph();
+  } else {
+    _data.speedKmh = 0.0;
   }
 
   // --- Satellites Count ---

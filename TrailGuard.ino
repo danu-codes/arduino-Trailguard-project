@@ -19,17 +19,37 @@ BuzzerManager  buzzer(BUZZER_PIN);
 TempManager    tempSensor(DHT_PIN, DHT11);
 BLEManager     bleManager;
 
-// Dedicated Button Timing Variables
+// Timing Variables
 unsigned long lastMenuBtnTime = 0;
 unsigned long lastNavBtnTime = 0;
 unsigned long lastActionBtnTime = 0;
 const unsigned long DEBOUNCE_DELAY = 250;  // ms
 
-// Helper to resume active state when menu is exited
+// Independent Timers & Summary Counters
+unsigned long recordingStartTime = 0;
+unsigned long returnStartTime = 0;
+
+uint32_t lastTripDurationSec = 0;
+uint16_t lastTripPointsCount = 0;
+
+uint32_t lastReturnDurationSec = 0;
+uint16_t lastReturnPointsCount = 0;
+
+// Battery Sensing Helper
+uint8_t readBatteryPercentage() {
+  uint16_t rawADC = analogRead(BATTERY_ADC_PIN);
+  float voltage = (rawADC / 4095.0f) * 2.0f * 3.3f;
+  int pct = (int)(((voltage - 3.2f) / (4.2f - 3.2f)) * 100.0f);
+  return (uint8_t)constrain(pct, 0, 100);
+}
+
+// Helper to resume active screen state after menu closes
 void resumeActiveScreen() {
   display.closeMenu();
   if (routeManager.isReturnMode()) {
     display.setScreen(SCREEN_RETURN);
+  } else if (routeManager.isRecording()) {
+    display.setScreen(SCREEN_RECORDING);
   } else {
     display.setScreen(SCREEN_HOME);
   }
@@ -44,6 +64,7 @@ void setup() {
   pinMode(LED_GPS_PIN, OUTPUT);
   pinMode(LED_BLE_PIN, OUTPUT);
   pinMode(LED_BAT_PIN, OUTPUT);
+  digitalWrite(LED_BAT_PIN, HIGH);
 
   // Keypad Pins Setup
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
@@ -92,7 +113,7 @@ void loop() {
   GPSData currentPos = gpsManager.getData();
   unsigned long now = millis();
 
-  // BLE Update & Status LED indicator
+  // BLE Update & Status LED indicators
   bleManager.update(currentPos);
   digitalWrite(LED_BLE_PIN, bleManager.isConnected() ? HIGH : LOW);
   digitalWrite(LED_GPS_PIN, currentPos.fixValid ? HIGH : LOW);
@@ -128,24 +149,28 @@ void loop() {
     }
   }
 
-  // B. BACK BUTTON (Smart Navigation)
+  // B. BACK BUTTON (Summary Screen -> Home Screen Navigation)
   if (digitalRead(BTN_BACK_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
 
     if (display.isMenuOpen()) {
-      // Menu -> Exit to active screen (HOME or RETURN)
       resumeActiveScreen();
-    } else if (display.getCurrentScreen() != SCREEN_HOME && display.getCurrentScreen() != SCREEN_RETURN) {
-      // Submenu screen -> Return to Menu pointing at previous selected item
-      display.toggleMenu();
+    } else if (display.getCurrentScreen() != SCREEN_HOME && 
+               display.getCurrentScreen() != SCREEN_RETURN && 
+               display.getCurrentScreen() != SCREEN_RECORDING) {
+      // If currently in a summary or sub-menu screen, go directly to HOME
+      if (display.getCurrentScreen() == SCREEN_TRIP_SUMMARY || display.getCurrentScreen() == SCREEN_RETURN_SUMMARY) {
+        display.setScreen(SCREEN_HOME);
+      } else {
+        display.toggleMenu();
+      }
     } else {
-      // Home screen -> Ensure SCREEN_HOME active
       display.setScreen(SCREEN_HOME);
     }
   }
 
-  // C. MENU NAVIGATION CONTROLS (When Menu is Open)
+  // C. MENU NAVIGATION CONTROLS
   if (display.isMenuOpen()) {
     if (digitalRead(BTN_UP_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
       lastNavBtnTime = now;
@@ -180,40 +205,53 @@ void loop() {
       display.closeMenu();
     }
   }
-  // D. DIRECT CONTROLS (When Menu is Closed)
+  // D. DIRECT CONTROLS
   else {
-    // START / STOP TRIP
+    // START / STOP TRIP BUTTON
     if (digitalRead(BTN_TRIP_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
       if (!routeManager.isRecording()) {
         routeManager.startRecording();
+        recordingStartTime = millis();  // Start trip timer
         buzzer.playSuccess();
-        display.renderMessage("TRAIL TRACKER", "Recording Started!", 1000);
+        display.setScreen(SCREEN_RECORDING);
       } else {
+        // STOP RECORDING -> CAPTURE SUMMARY & SHOW TRIP SUMMARY SCREEN
+        lastTripDurationSec = (millis() - recordingStartTime) / 1000;
+        lastTripPointsCount = routeManager.getPointCount();
         routeManager.stopRecording();
         buzzer.playWarning();
-        display.renderMessage("TRAIL TRACKER", "Recording Stopped.", 1000);
+        display.setScreen(SCREEN_TRIP_SUMMARY);
       }
     }
 
-    // RETURN TRIP
+    // RETURN MODE BUTTON
     if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
+      
       if (!routeManager.isReturnMode()) {
         if (routeManager.getPointCount() > 0) {
+          if (routeManager.isRecording()) {
+            lastTripDurationSec = (millis() - recordingStartTime) / 1000;
+            lastTripPointsCount = routeManager.getPointCount();
+            routeManager.stopRecording();
+          }
+
           routeManager.startReturnMode();
+          returnStartTime = millis();  // RESET RETURN TIMER TO 00:00:00!
           buzzer.playArrivalAlert();
           display.setScreen(SCREEN_RETURN);
-          display.renderMessage("BACKTRACK NAV", "Return Mode Active!", 1000);
         } else {
           buzzer.playWarning();
           display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
+        // STOP RETURN MODE -> SHOW RETURN SUMMARY SCREEN
+        lastReturnDurationSec = (millis() - returnStartTime) / 1000;
+        lastReturnPointsCount = routeManager.getPointCount();
         routeManager.stopReturnMode();
         buzzer.playClick();
-        display.setScreen(SCREEN_HOME);
-        display.renderMessage("BACKTRACK NAV", "Return Stopped.", 1000);
+        display.setScreen(SCREEN_RETURN_SUMMARY);
       }
     }
   }
@@ -239,6 +277,25 @@ void loop() {
           display.renderHome(currentPos, currentTemp, currentHum, bleManager.isConnected());
           break;
 
+        case SCREEN_RECORDING: {
+          uint32_t elapsedSec = (millis() - recordingStartTime) / 1000;
+          uint8_t batPct = readBatteryPercentage();
+          display.renderRecording(currentPos, elapsedSec, routeManager.getPointCount(), batPct);
+          break;
+        }
+
+        case SCREEN_TRIP_SUMMARY: {
+          uint8_t batPct = readBatteryPercentage();
+          display.renderTripSummary(lastTripDurationSec, lastTripPointsCount, batPct);
+          break;
+        }
+
+        case SCREEN_RETURN_SUMMARY: {
+          uint8_t batPct = readBatteryPercentage();
+          display.renderReturnSummary(lastReturnDurationSec, lastReturnPointsCount, batPct);
+          break;
+        }
+
         case SCREEN_GPS:
           display.renderGPS(currentPos, currentTemp, currentHum);
           break;
@@ -255,7 +312,9 @@ void loop() {
           display.renderSystemInfo(currentTemp, currentHum);
           break;
 
-        case SCREEN_RETURN:
+        case SCREEN_RETURN: {
+          uint32_t elapsedReturnSec = (millis() - returnStartTime) / 1000; // Time from 0
+          uint8_t batPct = readBatteryPercentage();
           display.renderReturnNav(
             routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),
             routeManager.getBearingToNext(currentPos.latitude, currentPos.longitude),
@@ -264,8 +323,11 @@ void loop() {
             routeManager.getPointCount(),
             currentTemp,
             currentHum,
-            offCourseState);
+            offCourseState,
+            elapsedReturnSec,
+            batPct);
           break;
+        }
       }
     }
   }

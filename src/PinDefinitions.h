@@ -17,8 +17,8 @@
 #define DHT_PIN          4
 
 // --- Status LED Pins ---
-#define LED_GPS_PIN      6    // Green Status LED
-#define LED_BLE_PIN      7    // Blue Status LED
+#define LED_GPS_PIN      41    // Green Status LED
+#define LED_BLE_PIN      38    // Blue Status LED
 #define LED_BAT_PIN      39   // Battery Status LED
 
 // --- Keypad Button Pins (6 Physical Navigation/Action Buttons) ---

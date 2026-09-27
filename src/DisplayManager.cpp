@@ -30,44 +30,25 @@ ScreenState DisplayManager::getCurrentScreen() const {
 }
 
 void DisplayManager::nextScreen() {
-  _currentScreen = static_cast<ScreenState>((_currentScreen + 1) % 6);
+  _currentScreen = static_cast<ScreenState>((_currentScreen + 1) % 9);
 }
 
 void DisplayManager::previousScreen() {
-  _currentScreen = static_cast<ScreenState>((_currentScreen + 5) % 6);
+  _currentScreen = static_cast<ScreenState>((_currentScreen + 8) % 9);
 }
 
-// --- Menu Helpers ---
-void DisplayManager::toggleMenu() {
-  _inMenu = !_inMenu;
-}
-
-bool DisplayManager::isMenuOpen() const {
-  return _inMenu;
-}
-
-void DisplayManager::closeMenu() {
-  _inMenu = false;
-}
-
-void DisplayManager::nextMenuOption() {
-  _menuIndex = (_menuIndex + 1) % MENU_OPTION_COUNT;
-}
-
-void DisplayManager::previousMenuOption() {
-  _menuIndex = (_menuIndex + MENU_OPTION_COUNT - 1) % MENU_OPTION_COUNT;
-}
-
-MenuOption DisplayManager::getSelectedMenuOption() const {
-  return static_cast<MenuOption>(_menuIndex);
-}
+void DisplayManager::toggleMenu() { _inMenu = !_inMenu; }
+bool DisplayManager::isMenuOpen() const { return _inMenu; }
+void DisplayManager::closeMenu() { _inMenu = false; }
+void DisplayManager::nextMenuOption() { _menuIndex = (_menuIndex + 1) % MENU_OPTION_COUNT; }
+void DisplayManager::previousMenuOption() { _menuIndex = (_menuIndex + MENU_OPTION_COUNT - 1) % MENU_OPTION_COUNT; }
+MenuOption DisplayManager::getSelectedMenuOption() const { return static_cast<MenuOption>(_menuIndex); }
 
 void DisplayManager::drawHeader(const char* title, const String& temp, const String& hum) {
   _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
   _display.setCursor(0, 0);
   _display.print(title);
-
   _display.setCursor(85, 0);
   _display.print(temp);
   _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
@@ -104,12 +85,95 @@ void DisplayManager::renderMenu() {
   _display.display();
 }
 
-// --- HOME SCREEN (Dashboard: Time, Temp/Hum, GPS Lock & BLE Status) ---
+void DisplayManager::renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct) {
+  _display.clearDisplay();
+  
+  _display.setTextSize(1);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+  _display.setCursor(0, 0);
+  
+  if ((millis() / 500) % 2 == 0) {
+    _display.print("[REC]");
+  } else {
+    _display.print("[   ]");
+  }
+
+  _display.printf(" TRAIL  BAT:%u%%", batPct);
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
+
+  uint32_t hrs = elapsedTimeSec / 3600;
+  uint32_t mins = (elapsedTimeSec % 3600) / 60;
+  uint32_t secs = elapsedTimeSec % 60;
+
+  _display.setCursor(0, 15);
+  _display.printf("TIME: %02u:%02u:%02u", hrs, mins, secs);
+
+  _display.setCursor(0, 27);
+  _display.printf("SPD : %.1f km/h", gps.speedKmh);
+
+  _display.setCursor(0, 39);
+  _display.printf("PTS : %u / 300", pointCount);
+
+  _display.setCursor(0, 51);
+  if (gps.fixValid) {
+    _display.printf("GPS : LOCK (%u SAT)", gps.satellites);
+  } else {
+    _display.printf("GPS : SEARCHING(%u)", gps.satellites);
+  }
+
+  _display.display();
+}
+
+// --- TRIP SUMMARY SCREEN ---
+void DisplayManager::renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct) {
+  _display.clearDisplay();
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+  _display.setTextSize(1);
+  _display.setCursor(15, 0);
+  _display.print("= TRIP SUMMARY =");
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
+
+  uint32_t hrs = totalTimeSec / 3600;
+  uint32_t mins = (totalTimeSec % 3600) / 60;
+  uint32_t secs = totalTimeSec % 60;
+
+  _display.setCursor(0, 16);
+  _display.printf("Duration : %02u:%02u:%02u\n", hrs, mins, secs);
+  _display.printf("Logged Pts: %u pts\n", totalPts);
+  _display.printf("Battery   : %u%%\n", batPct);
+  
+  _display.setCursor(0, 52);
+  _display.print("[Press BACK -> Home]");
+  _display.display();
+}
+
+// --- RETURN NAV SUMMARY SCREEN ---
+void DisplayManager::renderReturnSummary(uint32_t totalTimeSec, uint16_t ptsReturned, uint8_t batPct) {
+  _display.clearDisplay();
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+  _display.setTextSize(1);
+  _display.setCursor(10, 0);
+  _display.print("= RETURN SUMMARY =");
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
+
+  uint32_t hrs = totalTimeSec / 3600;
+  uint32_t mins = (totalTimeSec % 3600) / 60;
+  uint32_t secs = totalTimeSec % 60;
+
+  _display.setCursor(0, 16);
+  _display.printf("Return Time: %02u:%02u:%02u\n", hrs, mins, secs);
+  _display.printf("Nodes Nav  : %u pts\n", ptsReturned);
+  _display.printf("Battery    : %u%%\n", batPct);
+
+  _display.setCursor(0, 52);
+  _display.print("[Press BACK -> Home]");
+  _display.display();
+}
+
 void DisplayManager::renderHome(const GPSData& gps, const String& temp, const String& hum, bool bleConnected) {
   _display.clearDisplay();
   _display.setTextColor(SH110X_WHITE);
 
-  // 1. UTC TIME (BIG TEXT)
   _display.setTextSize(2);
   _display.setCursor(16, 2);
   if (gps.fixValid) {
@@ -122,12 +186,10 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
 
   _display.drawLine(0, 20, 128, 20, SH110X_WHITE);
 
-  // 2. TEMP & HUMIDITY
   _display.setTextSize(1);
   _display.setCursor(0, 24);
   _display.printf("TMP:%s | HUM:%s", temp.c_str(), hum.c_str());
 
-  // 3. SATELLITE STATUS
   _display.setCursor(0, 38);
   if (gps.fixValid) {
     _display.printf("SAT: %02d (3D LOCK)", gps.satellites);
@@ -135,7 +197,6 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
     _display.printf("SAT: %02d (SEARCHING)", gps.satellites);
   }
 
-  // 4. BLE CONNECTION
   _display.setCursor(0, 52);
   if (bleConnected) {
     _display.print("BLE: APP CONNECTED");
@@ -146,7 +207,6 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
   _display.display();
 }
 
-// --- DEDICATED GPS COORDINATES SCREEN ---
 void DisplayManager::renderGPS(const GPSData& gps, const String& temp, const String& hum) {
   _display.clearDisplay();
   drawHeader("GPS COORDINATES", temp, hum);
@@ -157,7 +217,7 @@ void DisplayManager::renderGPS(const GPSData& gps, const String& temp, const Str
     _display.printf("Lat: %.5f\n", gps.latitude);
     _display.printf("Lng: %.5f\n", gps.longitude);
     _display.printf("Alt: %.1fm\n", gps.altitudeMeters);
-    _display.printf("Sats: %d\n", gps.satellites);
+    _display.printf("Spd: %.1fkm/h\n", gps.speedKmh);
   } else {
     _display.println("Searching Signal...");
     _display.printf("Sats Visible: %d\n", gps.satellites);
@@ -211,24 +271,28 @@ void DisplayManager::drawOffCourseBanner() {
   }
 }
 
-void DisplayManager::drawArrow(int16_t cx, int16_t cy, float angleDeg, int16_t radius) {
-  float rad = (angleDeg - 90.0f) * M_PI / 180.0f;
+void DisplayManager::drawTurnArrow(int16_t cx, int16_t cy, float relativeAngle) {
+  while (relativeAngle > 180.0f) relativeAngle -= 360.0f;
+  while (relativeAngle < -180.0f) relativeAngle += 360.0f;
 
-  int16_t xTip = cx + cos(rad) * radius;
-  int16_t yTip = cy + sin(rad) * radius;
+  _display.drawCircle(cx, cy, 14, SH110X_WHITE);
 
-  float wingAngle1 = rad + (135.0f * M_PI / 180.0f);
-  float wingAngle2 = rad - (135.0f * M_PI / 180.0f);
-
-  int16_t xWing1 = cx + cos(wingAngle1) * (radius * 0.6f);
-  int16_t yWing1 = cy + sin(wingAngle1) * (radius * 0.6f);
-
-  int16_t xWing2 = cx + cos(wingAngle2) * (radius * 0.6f);
-  int16_t yWing2 = cy + sin(wingAngle2) * (radius * 0.6f);
-
-  _display.drawCircle(cx, cy, radius + 2, SH110X_WHITE);
-  _display.drawLine(cx, cy, xTip, yTip, SH110X_WHITE);
-  _display.fillTriangle(xTip, yTip, xWing1, yWing1, xWing2, yWing2, SH110X_WHITE);
+  if (relativeAngle > 45.0f && relativeAngle <= 135.0f) {
+    _display.fillTriangle(cx + 6, cy, cx + 2, cy - 4, cx + 2, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx - 6, cy + 4, cx + 2, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx - 6, cy - 2, cx - 6, cy + 4, SH110X_WHITE);
+  } else if (relativeAngle > 135.0f || relativeAngle < -135.0f) {
+    _display.fillTriangle(cx - 6, cy, cx - 2, cy - 4, cx - 2, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx - 6, cy + 4, cx + 6, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx + 6, cy - 2, cx + 6, cy + 4, SH110X_WHITE);
+  } else if (relativeAngle < -45.0f && relativeAngle >= -135.0f) {
+    _display.fillTriangle(cx - 6, cy, cx - 2, cy - 4, cx - 2, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx - 2, cy + 4, cx + 6, cy + 4, SH110X_WHITE);
+    _display.drawLine(cx + 6, cy - 2, cx + 6, cy + 4, SH110X_WHITE);
+  } else {
+    _display.fillTriangle(cx, cy - 8, cx - 4, cy - 2, cx + 4, cy - 2, SH110X_WHITE);
+    _display.drawLine(cx, cy - 2, cx, cy + 8, SH110X_WHITE);
+  }
 }
 
 void DisplayManager::renderBootScreen() {
@@ -261,25 +325,53 @@ void DisplayManager::renderMessage(const String& title, const String& msg, uint1
 void DisplayManager::renderReturnNav(double distance, double bearing, double heading,
                                      uint16_t currentIdx, uint16_t totalIdx,
                                      const String& temp, const String& hum,
-                                     bool isOffCourse) {
+                                     bool isOffCourse, uint32_t elapsedTimeSec, uint8_t batPct) {
   _display.clearDisplay();
-  drawHeader("BACKTRACK NAV", temp, hum);
+  
+  _display.setTextSize(1);
+  _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+  _display.setCursor(0, 0);
+  _display.print("BACKTRACK  BAT:");
+  _display.print(batPct);
+  _display.print("%");
+  _display.drawFastHLine(0, 10, 128, SH110X_WHITE);
 
   if (isOffCourse) {
     drawOffCourseBanner();
   }
 
   float relativeAngle = bearing - heading;
-  drawArrow(105, 42, relativeAngle, 14);
+  while (relativeAngle > 180.0f) relativeAngle -= 360.0f;
+  while (relativeAngle < -180.0f) relativeAngle += 360.0f;
 
-  uint8_t startY = isOffCourse ? 26 : 16;
+  drawTurnArrow(105, 38, relativeAngle);
+
+  uint8_t startY = isOffCourse ? 26 : 14;
 
   _display.setCursor(0, startY);
-  _display.print("Dist: "); _display.print(distance, 1); _display.println("m");
-  _display.setCursor(0, startY + 12);
-  _display.print("Brg:  "); _display.print(bearing, 0); _display.println(" deg");
-  _display.setCursor(0, startY + 24);
-  _display.print("Pt:   "); _display.print(currentIdx); _display.print("/"); _display.println(totalIdx);
+  _display.setTextSize(1);
+  if (relativeAngle > 45.0f && relativeAngle <= 135.0f) {
+    _display.print("-> GO RIGHT");
+  } else if (relativeAngle > 135.0f || relativeAngle < -135.0f) {
+    _display.print("<- U-TURN BACK");
+  } else if (relativeAngle < -45.0f && relativeAngle >= -135.0f) {
+    _display.print("<- GO LEFT");
+  } else {
+    _display.print("^ KEEP STRAIGHT");
+  }
+
+  _display.setCursor(0, startY + 13);
+  _display.setTextSize(1);
+  _display.printf("Dist: %.1fm", distance);
+
+  uint32_t hrs = elapsedTimeSec / 3600;
+  uint32_t mins = (elapsedTimeSec % 3600) / 60;
+  uint32_t secs = elapsedTimeSec % 60;
+  _display.setCursor(0, startY + 25);
+  _display.printf("Time: %02u:%02u:%02u", hrs, mins, secs);
+
+  _display.setCursor(0, startY + 37);
+  _display.printf("Node: %u/%u", currentIdx, totalIdx);
 
   _display.display();
 }
