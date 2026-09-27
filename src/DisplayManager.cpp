@@ -15,7 +15,8 @@ bool DisplayManager::begin(uint8_t i2cAddress) {
     return false;
   }
   _display.clearDisplay();
-  _display.setTextColor(SSD1306_WHITE);
+  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Set default foreground & background
+  _display.setTextSize(1);
   _display.display();
   return true;
 }
@@ -62,6 +63,8 @@ MenuOption DisplayManager::getSelectedMenuOption() const {
 }
 
 void DisplayManager::drawHeader(const char* title, const String& temp, const String& hum) {
+  // Always reset default text colors at the start of header rendering
+  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); 
   _display.setTextSize(1);
   _display.setCursor(0, 0);
   _display.print(title);
@@ -74,6 +77,7 @@ void DisplayManager::drawHeader(const char* title, const String& temp, const Str
 void DisplayManager::renderMenu() {
   _display.clearDisplay();
   _display.setTextSize(1);
+  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
   _display.setCursor(35, 0);
   _display.print("= MENU =");
   _display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
@@ -89,9 +93,9 @@ void DisplayManager::renderMenu() {
     uint8_t y = 14 + (i * 12);
     if (i == _menuIndex) {
       _display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
-      _display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+      _display.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Inverted text for highlighted row
     } else {
-      _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+      _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Normal white text
     }
     _display.setCursor(4, y);
     _display.print(options[i]);
@@ -127,19 +131,19 @@ void DisplayManager::drawOffCourseBanner() {
 }
 
 void DisplayManager::drawArrow(int16_t cx, int16_t cy, float angleDeg, int16_t radius) {
-  float rad = (angleDeg - 90.0) * M_PI / 180.0;
+  float rad = (angleDeg - 90.0f) * M_PI / 180.0f;
 
   int16_t xTip = cx + cos(rad) * radius;
   int16_t yTip = cy + sin(rad) * radius;
 
-  float wingAngle1 = rad + (135.0 * M_PI / 180.0);
-  float wingAngle2 = rad - (135.0 * M_PI / 180.0);
+  float wingAngle1 = rad + (135.0f * M_PI / 180.0f);
+  float wingAngle2 = rad - (135.0f * M_PI / 180.0f);
 
-  int16_t xWing1 = cx + cos(wingAngle1) * (radius * 0.6);
-  int16_t yWing1 = cy + sin(wingAngle1) * (radius * 0.6);
+  int16_t xWing1 = cx + cos(wingAngle1) * (radius * 0.6f);
+  int16_t yWing1 = cy + sin(wingAngle1) * (radius * 0.6f);
 
-  int16_t xWing2 = cx + cos(wingAngle2) * (radius * 0.6);
-  int16_t yWing2 = cy + sin(wingAngle2) * (radius * 0.6);
+  int16_t xWing2 = cx + cos(wingAngle2) * (radius * 0.6f);
+  int16_t yWing2 = cy + sin(wingAngle2) * (radius * 0.6f);
 
   _display.drawCircle(cx, cy, radius + 2, SSD1306_WHITE);
   _display.drawLine(cx, cy, xTip, yTip, SSD1306_WHITE);
@@ -148,6 +152,7 @@ void DisplayManager::drawArrow(int16_t cx, int16_t cy, float angleDeg, int16_t r
 
 void DisplayManager::renderBootScreen() {
   _display.clearDisplay();
+  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
   _display.setTextSize(2);
   _display.setCursor(5, 15);
   _display.print("TRAILGUARD");
@@ -159,6 +164,7 @@ void DisplayManager::renderBootScreen() {
 
 void DisplayManager::renderMessage(const String& title, const String& msg, uint16_t delayMs) {
   _display.clearDisplay();
+  _display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
   _display.setTextSize(1);
   _display.setCursor(0, 10);
   _display.println(title);
@@ -166,7 +172,9 @@ void DisplayManager::renderMessage(const String& title, const String& msg, uint1
   _display.setCursor(0, 32);
   _display.println(msg);
   _display.display();
-  delay(delayMs);
+  if (delayMs > 0) {
+    delay(delayMs);
+  }
 }
 
 void DisplayManager::renderGPS(const GPSData& gps, const String& temp, const String& hum) {

@@ -41,14 +41,17 @@ void setup() {
   delay(500);
   Serial.println("\n--- TrailGuard S3 Handheld Initializing ---");
 
-  // Keypad Pins
+  // Status LEDs Setup
+  pinMode(LED_GPS_PIN, OUTPUT);
+  pinMode(LED_BLE_PIN, OUTPUT);
+  pinMode(LED_BAT_PIN, OUTPUT);
+
+  // Keypad Pins Setup (7 Buttons)
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
   pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
-  pinMode(BTN_LEFT_PIN, INPUT_PULLUP);
-  pinMode(BTN_RIGHT_PIN, INPUT_PULLUP);
   pinMode(BTN_OK_PIN, INPUT_PULLUP);
-  pinMode(BTN_START_PIN, INPUT_PULLUP);
-  pinMode(BTN_POWER_PIN, INPUT_PULLUP);
+  pinMode(BTN_TRIP_PIN, INPUT_PULLUP);
+  pinMode(BTN_RETURN_PIN, INPUT_PULLUP);
   pinMode(BTN_MENU_PIN, INPUT_PULLUP);
   pinMode(BTN_BACK_PIN, INPUT_PULLUP);
 
@@ -106,27 +109,29 @@ void loop() {
 
   // --- 3. Keypad & Input Handling ---
 
-  // A. MENU TOGGLE (Menu button opens/closes menu)
+  // A. MENU TOGGLE BUTTON
   if (digitalRead(BTN_MENU_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
     if (display.isMenuOpen()) {
-      resumeActiveScreen(); // Resume previous state
+      resumeActiveScreen(); 
     } else {
-      display.toggleMenu(); // Open menu overlay
+      display.toggleMenu(); 
     }
   }
 
-  // B. BACK BUTTON (Only works inside Menu)
+  // B. BACK BUTTON (Exits menu or returns home)
   if (digitalRead(BTN_BACK_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
     if (display.isMenuOpen()) {
-      resumeActiveScreen(); // Exit menu back to active state
+      resumeActiveScreen(); 
+    } else {
+      display.setScreen(SCREEN_GPS); // Return to home screen
     }
   }
 
-  // C. MENU NAVIGATION CONTROLS (Active while Menu is Open)
+  // C. MENU NAVIGATION CONTROLS (Active when Menu is Open)
   if (display.isMenuOpen()) {
     if (digitalRead(BTN_UP_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
       lastNavBtnTime = now;
@@ -144,7 +149,6 @@ void loop() {
       lastActionBtnTime = now;
       buzzer.playClick();
 
-      // Open selected menu screen and exit menu overlay
       switch (display.getSelectedMenuOption()) {
         case MENU_OPTION_GPS:
           display.setScreen(SCREEN_GPS);
@@ -162,22 +166,10 @@ void loop() {
       display.closeMenu();
     }
   } 
-  // D. NORMAL NAVIGATION CONTROLS (Active when Menu is Closed)
+  // D. QUICK DIRECT CONTROLS (Active when Menu is Closed)
   else {
-    // Quick Left/Right screen cycle
-    if (digitalRead(BTN_RIGHT_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
-      lastNavBtnTime = now;
-      buzzer.playClick();
-      display.nextScreen();
-    }
-    if (digitalRead(BTN_LEFT_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
-      lastNavBtnTime = now;
-      buzzer.playClick();
-      display.previousScreen();
-    }
-
-    // START/STOP Trail Recording
-    if (digitalRead(BTN_START_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
+    // START / STOP TRIP (Trail Recording Toggle)
+    if (digitalRead(BTN_TRIP_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
       if (!routeManager.isRecording()) {
         routeManager.startRecording();
@@ -190,8 +182,8 @@ void loop() {
       }
     }
 
-    // TOGGLE Backtrack Navigation Mode
-    if (digitalRead(BTN_OK_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
+    // RETURN TRIP (Backtrack Mode Toggle)
+    if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
       if (!routeManager.isReturnMode()) {
         if (routeManager.getPointCount() > 0) {
@@ -201,30 +193,16 @@ void loop() {
           display.renderMessage("BACKTRACK NAV", "Return Mode Active!", 1000);
         } else {
           buzzer.playWarning();
-          display.renderMessage("ERROR", "No Route Points Logged!", 1000);
+          display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
+        // STOP Return Mode & Go straight back to Home (GPS) Screen!
         routeManager.stopReturnMode();
         buzzer.playClick();
-        display.renderMessage("BACKTRACK NAV", "Return Mode Stopped.", 1000);
+        display.setScreen(SCREEN_GPS); 
+        display.renderMessage("BACKTRACK NAV", "Return Stopped.", 1000);
       }
     }
-  }
-
-  // E. POWER OFF / DEEP SLEEP (Hold Power for 2 Seconds)
-  if (digitalRead(BTN_POWER_PIN) == LOW) {
-    if (!powerBtnPressed) {
-      powerBtnPressed = true;
-      powerBtnPressStart = now;
-    } else if (now - powerBtnPressStart >= 2000) {
-      buzzer.playPowerOff();
-      display.renderMessage("POWER OFF", "Shutting down...", 1000);
-
-      esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_POWER_PIN, LOW);
-      esp_deep_sleep_start();
-    }
-  } else {
-    powerBtnPressed = false;
   }
 
   // --- 4. OLED Display Render Loop (10 Hz) ---
