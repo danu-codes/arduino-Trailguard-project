@@ -16,8 +16,8 @@ enum ScreenState {
   SCREEN_SYSTEM,
   SCREEN_RETURN,
   SCREEN_RECORDING,
-  SCREEN_TRIP_SUMMARY,    // <--- Trip Summary View
-  SCREEN_RETURN_SUMMARY   // <--- Return Summary View
+  SCREEN_TRIP_SUMMARY,
+  SCREEN_RETURN_SUMMARY
 };
 
 enum MenuOption {
@@ -35,8 +35,6 @@ public:
 
   void setScreen(ScreenState screen);
   ScreenState getCurrentScreen() const;
-  void nextScreen();
-  void previousScreen();
 
   // Menu methods
   void toggleMenu();
@@ -50,17 +48,16 @@ public:
   void renderBootScreen();
   void renderMessage(const String& title, const String& msg, uint16_t delayMs = 0);
   void renderMenu();
-  
+
   // Render Screens
-  void renderHome(const GPSData& gps, const String& temp, const String& hum, bool bleConnected);
-  void renderGPS(const GPSData& gps, const String& temp, const String& hum);
-  void renderIMU(const MotionData& imu, const String& temp, const String& hum);
+  void renderHome(const GPSData& gps, const String& temp, const String& hum, bool bleConnected, uint8_t batPct);
+  void renderGPS(const GPSData& gps);
+  void renderIMU(const MotionData& imu);
   void renderTempScreen(const String& temp, const String& hum);
-  void renderSystemInfo(const String& temp, const String& hum);
-  
+  void renderSystemInfo(uint8_t batPct);
+
   void renderReturnNav(double distance, double bearing, double heading,
                        uint16_t currentIdx, uint16_t totalIdx,
-                       const String& temp, const String& hum,
                        bool isOffCourse, uint32_t elapsedTimeSec, uint8_t batPct);
 
   void renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct);
@@ -75,9 +72,8 @@ private:
   bool _inMenu;
   uint8_t _menuIndex;
 
-  void drawHeader(const char* title, const String& temp, const String& hum);
+  void drawHeader(const char* title, const char* rightText = "");
   void drawTurnArrow(int16_t cx, int16_t cy, float relativeAngle);
-  void drawOffCourseBanner();
 };
 
 #endif  // DISPLAY_MANAGER_H

@@ -12,12 +12,12 @@
 
 // --- Global Manager Instances ---
 DisplayManager display;
-MotionManager  motion;
-GPSManager     gpsManager;
-RouteManager   routeManager;
-BuzzerManager  buzzer(BUZZER_PIN);
-TempManager    tempSensor(DHT_PIN, DHT11);
-BLEManager     bleManager;
+MotionManager motion;
+GPSManager gpsManager;
+RouteManager routeManager;
+BuzzerManager buzzer(BUZZER_PIN);
+TempManager tempSensor(DHT_PIN, DHT11);
+BLEManager bleManager;
 
 // Timing Variables
 unsigned long lastMenuBtnTime = 0;
@@ -37,10 +37,32 @@ uint16_t lastReturnPointsCount = 0;
 
 // Battery Sensing Helper
 uint8_t readBatteryPercentage() {
-  uint16_t rawADC = analogRead(BATTERY_ADC_PIN);
+  uint32_t adcSum = 0;
+  const uint8_t SAMPLES = 32;  // Take 32 samples to eliminate jitter
+
+  for (uint8_t i = 0; i < SAMPLES; i++) {
+    adcSum += analogRead(BATTERY_ADC_PIN);
+    delayMicroseconds(50);
+  }
+
+  float rawADC = (float)adcSum / (float)SAMPLES;
+
+  // Calculate voltage: Divider cuts voltage in half (100k / 100k)
+  // ESP32 ADC max is 3.3V across 4095 steps
   float voltage = (rawADC / 4095.0f) * 2.0f * 3.3f;
+
+  // Map LiPo range: 3.2V (0%) to 4.2V (100%)
   int pct = (int)(((voltage - 3.2f) / (4.2f - 3.2f)) * 100.0f);
-  return (uint8_t)constrain(pct, 0, 100);
+
+  // Static moving average smoothing filter for display stability
+  static float smoothedPct = -1.0f;
+  if (smoothedPct < 0.0f) {
+    smoothedPct = (float)pct;
+  } else {
+    smoothedPct = (smoothedPct * 0.9f) + ((float)pct * 0.1f);
+  }
+
+  return (uint8_t)constrain((int)smoothedPct, 0, 100);
 }
 
 // Helper to resume active screen state after menu closes
@@ -149,17 +171,14 @@ void loop() {
     }
   }
 
-  // B. BACK BUTTON (Summary Screen -> Home Screen Navigation)
+  // B. BACK BUTTON
   if (digitalRead(BTN_BACK_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
 
     if (display.isMenuOpen()) {
       resumeActiveScreen();
-    } else if (display.getCurrentScreen() != SCREEN_HOME && 
-               display.getCurrentScreen() != SCREEN_RETURN && 
-               display.getCurrentScreen() != SCREEN_RECORDING) {
-      // If currently in a summary or sub-menu screen, go directly to HOME
+    } else if (display.getCurrentScreen() != SCREEN_HOME && display.getCurrentScreen() != SCREEN_RETURN && display.getCurrentScreen() != SCREEN_RECORDING) {
       if (display.getCurrentScreen() == SCREEN_TRIP_SUMMARY || display.getCurrentScreen() == SCREEN_RETURN_SUMMARY) {
         display.setScreen(SCREEN_HOME);
       } else {
@@ -212,11 +231,10 @@ void loop() {
       lastActionBtnTime = now;
       if (!routeManager.isRecording()) {
         routeManager.startRecording();
-        recordingStartTime = millis();  // Start trip timer
+        recordingStartTime = millis();
         buzzer.playSuccess();
         display.setScreen(SCREEN_RECORDING);
       } else {
-        // STOP RECORDING -> CAPTURE SUMMARY & SHOW TRIP SUMMARY SCREEN
         lastTripDurationSec = (millis() - recordingStartTime) / 1000;
         lastTripPointsCount = routeManager.getPointCount();
         routeManager.stopRecording();
@@ -228,7 +246,7 @@ void loop() {
     // RETURN MODE BUTTON
     if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
       lastActionBtnTime = now;
-      
+
       if (!routeManager.isReturnMode()) {
         if (routeManager.getPointCount() > 0) {
           if (routeManager.isRecording()) {
@@ -238,7 +256,7 @@ void loop() {
           }
 
           routeManager.startReturnMode();
-          returnStartTime = millis();  // RESET RETURN TIMER TO 00:00:00!
+          returnStartTime = millis();
           buzzer.playArrivalAlert();
           display.setScreen(SCREEN_RETURN);
         } else {
@@ -246,7 +264,6 @@ void loop() {
           display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
-        // STOP RETURN MODE -> SHOW RETURN SUMMARY SCREEN
         lastReturnDurationSec = (millis() - returnStartTime) / 1000;
         lastReturnPointsCount = routeManager.getPointCount();
         routeManager.stopReturnMode();
@@ -274,34 +291,40 @@ void loop() {
 
       switch (display.getCurrentScreen()) {
         case SCREEN_HOME:
-          display.renderHome(currentPos, currentTemp, currentHum, bleManager.isConnected());
-          break;
+          {
+            uint8_t batPct = readBatteryPercentage();
+            display.renderHome(currentPos, currentTemp, currentHum, bleManager.isConnected(), batPct);
+            break;
+          }
 
-        case SCREEN_RECORDING: {
-          uint32_t elapsedSec = (millis() - recordingStartTime) / 1000;
-          uint8_t batPct = readBatteryPercentage();
-          display.renderRecording(currentPos, elapsedSec, routeManager.getPointCount(), batPct);
-          break;
-        }
+        case SCREEN_RECORDING:
+          {
+            uint32_t elapsedSec = (millis() - recordingStartTime) / 1000;
+            uint8_t batPct = readBatteryPercentage();
+            display.renderRecording(currentPos, elapsedSec, routeManager.getPointCount(), batPct);
+            break;
+          }
 
-        case SCREEN_TRIP_SUMMARY: {
-          uint8_t batPct = readBatteryPercentage();
-          display.renderTripSummary(lastTripDurationSec, lastTripPointsCount, batPct);
-          break;
-        }
+        case SCREEN_TRIP_SUMMARY:
+          {
+            uint8_t batPct = readBatteryPercentage();
+            display.renderTripSummary(lastTripDurationSec, lastTripPointsCount, batPct);
+            break;
+          }
 
-        case SCREEN_RETURN_SUMMARY: {
-          uint8_t batPct = readBatteryPercentage();
-          display.renderReturnSummary(lastReturnDurationSec, lastReturnPointsCount, batPct);
-          break;
-        }
+        case SCREEN_RETURN_SUMMARY:
+          {
+            uint8_t batPct = readBatteryPercentage();
+            display.renderReturnSummary(lastReturnDurationSec, lastReturnPointsCount, batPct);
+            break;
+          }
 
         case SCREEN_GPS:
-          display.renderGPS(currentPos, currentTemp, currentHum);
+          display.renderGPS(currentPos);
           break;
 
         case SCREEN_IMU:
-          display.renderIMU(motion.getData(), currentTemp, currentHum);
+          display.renderIMU(motion.getData());
           break;
 
         case SCREEN_TEMP:
@@ -309,25 +332,27 @@ void loop() {
           break;
 
         case SCREEN_SYSTEM:
-          display.renderSystemInfo(currentTemp, currentHum);
-          break;
+          {
+            uint8_t batPct = readBatteryPercentage();
+            display.renderSystemInfo(batPct);
+            break;
+          }
 
-        case SCREEN_RETURN: {
-          uint32_t elapsedReturnSec = (millis() - returnStartTime) / 1000; // Time from 0
-          uint8_t batPct = readBatteryPercentage();
-          display.renderReturnNav(
-            routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),
-            routeManager.getBearingToNext(currentPos.latitude, currentPos.longitude),
-            motion.getData().heading,
-            routeManager.getCurrentTargetIndex() + 1,
-            routeManager.getPointCount(),
-            currentTemp,
-            currentHum,
-            offCourseState,
-            elapsedReturnSec,
-            batPct);
-          break;
-        }
+        case SCREEN_RETURN:
+          {
+            uint32_t elapsedReturnSec = (millis() - returnStartTime) / 1000;
+            uint8_t batPct = readBatteryPercentage();
+            display.renderReturnNav(
+              routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),
+              routeManager.getBearingToNext(currentPos.latitude, currentPos.longitude),
+              motion.getData().heading,
+              routeManager.getCurrentTargetIndex() + 1,
+              routeManager.getPointCount(),
+              offCourseState,
+              elapsedReturnSec,
+              batPct);
+            break;
+          }
       }
     }
   }
