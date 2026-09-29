@@ -14,6 +14,7 @@ enum ScreenState {
   SCREEN_IMU,
   SCREEN_TEMP,
   SCREEN_SYSTEM,
+  SCREEN_BATTERY,
   SCREEN_RETURN,
   SCREEN_RECORDING,
   SCREEN_TRIP_SUMMARY,
@@ -25,6 +26,7 @@ enum MenuOption {
   MENU_OPTION_IMU,
   MENU_OPTION_TEMP,
   MENU_OPTION_SYSTEM,
+  MENU_OPTION_BATTERY,
   MENU_OPTION_COUNT
 };
 
@@ -54,6 +56,7 @@ public:
   void renderGPS(const GPSData& gps);
   void renderIMU(const MotionData& imu);
   void renderTempScreen(const String& temp, const String& hum);
+  void renderBatteryScreen(uint8_t batPct);
   void renderSystemInfo(uint8_t batPct);
 
   void renderReturnNav(double distance, double bearing, double heading,

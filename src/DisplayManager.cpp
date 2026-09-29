@@ -64,13 +64,15 @@ void DisplayManager::renderMenu() {
     "1. GPS Coordinates",
     "2. IMU / Compass",
     "3. Environment",
-    "4. System Status"
+    "4. System Status",
+    "5. Battery Details"
   };
 
+  // Adjusted spacing to fit all 5 options within the 64px height limit
   for (uint8_t i = 0; i < MENU_OPTION_COUNT; i++) {
-    uint8_t y = 14 + (i * 12);
+    uint8_t y = 13 + (i * 10); // Spacing reduced from 12 to 10 pixels
     if (i == _menuIndex) {
-      _display.fillRect(0, y - 1, 128, 11, SH110X_WHITE);
+      _display.fillRect(0, y - 1, 128, 9, SH110X_WHITE); // Highlight bar height adjusted to 9
       _display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     } else {
       _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
@@ -370,6 +372,26 @@ void DisplayManager::renderReturnNav(double distance, double bearing, double hea
 
   _display.setCursor(0, 51);
   _display.printf("Node: %u/%u", currentIdx, totalIdx);
+
+  _display.display();
+}
+
+void DisplayManager::renderBatteryScreen(uint8_t batPct) {
+  _display.clearDisplay();
+  drawHeader("BATTERY DETAILS", "");
+
+  _display.setCursor(0, 18);
+  _display.setTextSize(1);
+  _display.printf("Status  : %s\n", batPct > 20 ? "NORMAL" : "LOW BATTERY!");
+  _display.printf("Level   : %u%%\n\n", batPct);
+
+  // Draw a visual battery container box on the OLED
+  _display.drawRect(14, 40, 100, 16, SH110X_WHITE);
+  _display.fillRect(114, 44, 4, 8, SH110X_WHITE); // Battery tip
+  
+  // Fill width based on percentage (max fill area is 96 pixels wide)
+  uint8_t fillWidth = (batPct * 96) / 100;
+  _display.fillRect(16, 42, fillWidth, 12, SH110X_WHITE);
 
   _display.display();
 }

@@ -220,6 +220,9 @@ void loop() {
         case MENU_OPTION_SYSTEM:
           display.setScreen(SCREEN_SYSTEM);
           break;
+        case MENU_OPTION_BATTERY:      
+          display.setScreen(SCREEN_BATTERY);
+          break;
       }
       display.closeMenu();
     }
@@ -264,11 +267,14 @@ void loop() {
           display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
-        lastReturnDurationSec = (millis() - returnStartTime) / 1000;
-        lastReturnPointsCount = routeManager.getPointCount();
-        routeManager.stopReturnMode();
-        buzzer.playClick();
-        display.setScreen(SCREEN_RETURN_SUMMARY);
+        // Prevent accidental immediate stop if bounced or double-clicked within 1.5 seconds of starting
+        if (millis() - returnStartTime > 1500) {
+          lastReturnDurationSec = (millis() - returnStartTime) / 1000;
+          lastReturnPointsCount = routeManager.getPointCount();
+          routeManager.stopReturnMode();
+          buzzer.playClick();
+          display.setScreen(SCREEN_RETURN_SUMMARY);
+        }
       }
     }
   }
@@ -335,6 +341,13 @@ void loop() {
           {
             uint8_t batPct = readBatteryPercentage();
             display.renderSystemInfo(batPct);
+            break;
+          }
+
+          case SCREEN_BATTERY:            
+          {
+            uint8_t batPct = readBatteryPercentage();
+            display.renderBatteryScreen(batPct);
             break;
           }
 

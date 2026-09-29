@@ -35,18 +35,35 @@ void MotionManager::update() {
     int16_t rawY = (Wire.read() << 8) | Wire.read();
     int16_t rawZ = (Wire.read() << 8) | Wire.read();
 
-    _data.accelX = rawX / 16384.0f;
-    _data.accelY = rawY / 16384.0f;
-    _data.accelZ = rawZ / 16384.0f;
+    float ax = rawX / 16384.0f;
+    float ay = rawY / 16384.0f;
+    float az = rawZ / 16384.0f;
 
-    // Calculate Pitch and Roll from Accelerometer
-    _data.pitch = atan2(_data.accelY, sqrt(_data.accelX * _data.accelX + _data.accelZ * _data.accelZ)) * 180.0 / M_PI;
-    _data.roll  = atan2(-_data.accelX, _data.accelZ) * 180.0 / M_PI;
+    _data.accelX = ax;
+    _data.accelY = ay;
+    _data.accelZ = az;
 
-    // Derived Tilt-based Direction Reference Angle (0-360 deg)
-    float calculatedAngle = atan2(_data.accelY, _data.accelX) * 180.0 / M_PI;
+    // Calculate Pitch and Roll
+    _data.pitch = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / M_PI;
+    _data.roll  = atan2(-ax, az) * 180.0 / M_PI;
+
+    // Raw calculated angle
+    float calculatedAngle = atan2(ay, ax) * 180.0 / M_PI;
     if (calculatedAngle < 0) calculatedAngle += 360.0f;
-    _data.heading = calculatedAngle;
+
+    // Apply Low-Pass Smoothing Filter to prevent instant/wild jitter flipping
+    if (_data.heading == 0.0f) {
+      _data.heading = calculatedAngle;
+    } else {
+      // Smooth out sudden spikes (90% old heading, 10% new reading)
+      float diff = calculatedAngle - _data.heading;
+      if (diff > 180.0f) diff -= 360.0f;
+      if (diff < -180.0f) diff += 360.0f;
+      
+      _data.heading += (diff * 0.1f);
+      if (_data.heading < 0.0f) _data.heading += 360.0f;
+      if (_data.heading >= 360.0f) _data.heading -= 360.0f;
+    }
   }
 }
 
