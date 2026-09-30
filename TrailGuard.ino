@@ -23,7 +23,13 @@ BLEManager bleManager;
 unsigned long lastMenuBtnTime = 0;
 unsigned long lastNavBtnTime = 0;
 unsigned long lastActionBtnTime = 0;
+unsigned long lastReturnBtnTime = 0;  // Dedicated Return button timer
 const unsigned long DEBOUNCE_DELAY = 250;  // ms
+
+// GPS Heading Tracking (Option 2)
+float gpsHeading = 0.0f;
+double lastHeadingLat = 0.0;
+double lastHeadingLng = 0.0;
 
 // Independent Timers & Summary Counters
 unsigned long recordingStartTime = 0;
@@ -140,6 +146,31 @@ void loop() {
   digitalWrite(LED_BLE_PIN, bleManager.isConnected() ? HIGH : LOW);
   digitalWrite(LED_GPS_PIN, currentPos.fixValid ? HIGH : LOW);
 
+  // --- Update GPS Heading for Navigation (Option 2) ---
+  if (currentPos.fixValid) {
+    if (lastHeadingLat != 0.0 && lastHeadingLng != 0.0) {
+      double lat1Rad = radians(lastHeadingLat);
+      double lat2Rad = radians(currentPos.latitude);
+      double dLonRad = radians(currentPos.longitude - lastHeadingLng);
+
+      double y = sin(dLonRad) * cos(lat2Rad);
+      double x = cos(lat1Rad) * sin(lat2Rad) - sin(lat1Rad) * cos(lat2Rad) * cos(dLonRad);
+      float calcHeading = atan2(y, x) * 180.0 / M_PI;
+      if (calcHeading < 0) calcHeading += 360.0f;
+
+      double distMoved = routeManager.getPointCount() > 0 ? 
+                         sqrt(pow(currentPos.latitude - lastHeadingLat, 2) + pow(currentPos.longitude - lastHeadingLng, 2)) * 111139.0 : 5.0;
+      if (distMoved > 2.0) {
+        gpsHeading = calcHeading;
+        lastHeadingLat = currentPos.latitude;
+        lastHeadingLng = currentPos.longitude;
+      }
+    } else {
+      lastHeadingLat = currentPos.latitude;
+      lastHeadingLng = currentPos.longitude;
+    }
+  }
+
   // --- 2. Background Breadcrumb Logging & Nav Rules ---
   if (routeManager.isRecording() && currentPos.fixValid) {
     if (routeManager.addBreadcrumb(currentPos.latitude, currentPos.longitude)) {
@@ -171,14 +202,20 @@ void loop() {
     }
   }
 
-  // B. BACK BUTTON
+  // B. BACK BUTTON (Enhanced with Return Mode Failsafe Exit)
   if (digitalRead(BTN_BACK_PIN) == LOW && (now - lastNavBtnTime > DEBOUNCE_DELAY)) {
     lastNavBtnTime = now;
     buzzer.playClick();
 
     if (display.isMenuOpen()) {
       resumeActiveScreen();
-    } else if (display.getCurrentScreen() != SCREEN_HOME && display.getCurrentScreen() != SCREEN_RETURN && display.getCurrentScreen() != SCREEN_RECORDING) {
+    } else if (routeManager.isReturnMode()) {
+      // Failsafe: Pressing BACK while in Return Mode stops it immediately
+      lastReturnDurationSec = (millis() - returnStartTime) / 1000;
+      lastReturnPointsCount = routeManager.getPointCount();
+      routeManager.stopReturnMode();
+      display.setScreen(SCREEN_RETURN_SUMMARY);
+    } else if (display.getCurrentScreen() != SCREEN_HOME && display.getCurrentScreen() != SCREEN_RECORDING) {
       if (display.getCurrentScreen() == SCREEN_TRIP_SUMMARY || display.getCurrentScreen() == SCREEN_RETURN_SUMMARY) {
         display.setScreen(SCREEN_HOME);
       } else {
@@ -246,9 +283,9 @@ void loop() {
       }
     }
 
-    // RETURN MODE BUTTON
-    if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastActionBtnTime > DEBOUNCE_DELAY)) {
-      lastActionBtnTime = now;
+    // RETURN MODE BUTTON (Optimized & Forced Stop)
+    if (digitalRead(BTN_RETURN_PIN) == LOW && (now - lastReturnBtnTime > DEBOUNCE_DELAY)) {
+      lastReturnBtnTime = now;
 
       if (!routeManager.isReturnMode()) {
         if (routeManager.getPointCount() > 0) {
@@ -267,14 +304,12 @@ void loop() {
           display.renderMessage("ERROR", "No Points Logged!", 1000);
         }
       } else {
-        // Prevent accidental immediate stop if bounced or double-clicked within 1.5 seconds of starting
-        if (millis() - returnStartTime > 1500) {
-          lastReturnDurationSec = (millis() - returnStartTime) / 1000;
-          lastReturnPointsCount = routeManager.getPointCount();
-          routeManager.stopReturnMode();
-          buzzer.playClick();
-          display.setScreen(SCREEN_RETURN_SUMMARY);
-        }
+        // Force stop return mode and go straight to summary
+        lastReturnDurationSec = (millis() - returnStartTime) / 1000;
+        lastReturnPointsCount = routeManager.getPointCount();
+        routeManager.stopReturnMode();
+        buzzer.playClick();
+        display.setScreen(SCREEN_RETURN_SUMMARY);
       }
     }
   }
@@ -291,7 +326,8 @@ void loop() {
     if (display.isMenuOpen()) {
       display.renderMenu();
     } else {
-      if (offCourseState && routeManager.isReturnMode() && display.getCurrentScreen() != SCREEN_RETURN) {
+      // Only force back to SCREEN_RETURN if return mode is active AND we aren't viewing summary
+      if (offCourseState && routeManager.isReturnMode() && display.getCurrentScreen() != SCREEN_RETURN && display.getCurrentScreen() != SCREEN_RETURN_SUMMARY) {
         display.setScreen(SCREEN_RETURN);
       }
 
@@ -307,21 +343,21 @@ void loop() {
           {
             uint32_t elapsedSec = (millis() - recordingStartTime) / 1000;
             uint8_t batPct = readBatteryPercentage();
-            display.renderRecording(currentPos, elapsedSec, routeManager.getPointCount(), batPct);
+            display.renderRecording(currentPos, elapsedSec, routeManager.getPointCount(), batPct, routeManager.getTotalDistance());
             break;
           }
 
         case SCREEN_TRIP_SUMMARY:
           {
             uint8_t batPct = readBatteryPercentage();
-            display.renderTripSummary(lastTripDurationSec, lastTripPointsCount, batPct);
+            display.renderTripSummary(lastTripDurationSec, routeManager.getPointCount(), batPct, routeManager.getTotalDistance());
             break;
           }
 
         case SCREEN_RETURN_SUMMARY:
           {
             uint8_t batPct = readBatteryPercentage();
-            display.renderReturnSummary(lastReturnDurationSec, lastReturnPointsCount, batPct);
+            display.renderReturnSummary(lastReturnDurationSec, lastReturnPointsCount, batPct, routeManager.getReturnDistance());
             break;
           }
 
@@ -344,7 +380,7 @@ void loop() {
             break;
           }
 
-          case SCREEN_BATTERY:            
+        case SCREEN_BATTERY:            
           {
             uint8_t batPct = readBatteryPercentage();
             display.renderBatteryScreen(batPct);
@@ -358,7 +394,7 @@ void loop() {
             display.renderReturnNav(
               routeManager.getDistanceToNext(currentPos.latitude, currentPos.longitude),
               routeManager.getBearingToNext(currentPos.latitude, currentPos.longitude),
-              motion.getData().heading,
+              gpsHeading,
               routeManager.getCurrentTargetIndex() + 1,
               routeManager.getPointCount(),
               offCourseState,

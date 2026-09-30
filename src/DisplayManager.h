@@ -63,11 +63,11 @@ public:
                        uint16_t currentIdx, uint16_t totalIdx,
                        bool isOffCourse, uint32_t elapsedTimeSec, uint8_t batPct);
 
-  void renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct);
+  void renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct, double totalDistMeters);
 
   // Summary Screen Renderers
-  void renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct);
-  void renderReturnSummary(uint32_t totalTimeSec, uint16_t ptsReturned, uint8_t batPct);
+  void renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct, double totalDistMeters);
+  void renderReturnSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct, double returnDistMeters);
 
 private:
   Adafruit_SH1106G _display;

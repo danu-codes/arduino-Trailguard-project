@@ -68,11 +68,10 @@ void DisplayManager::renderMenu() {
     "5. Battery Details"
   };
 
-  // Adjusted spacing to fit all 5 options within the 64px height limit
   for (uint8_t i = 0; i < MENU_OPTION_COUNT; i++) {
-    uint8_t y = 13 + (i * 10); // Spacing reduced from 12 to 10 pixels
+    uint8_t y = 13 + (i * 10);
     if (i == _menuIndex) {
-      _display.fillRect(0, y - 1, 128, 9, SH110X_WHITE); // Highlight bar height adjusted to 9
+      _display.fillRect(0, y - 1, 128, 9, SH110X_WHITE);
       _display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     } else {
       _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
@@ -89,7 +88,6 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
   _display.clearDisplay();
   _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
 
-  // --- Top Bar: Status / Battery ---
   _display.setTextSize(1);
   _display.setCursor(0, 0);
   _display.print("TRAILGUARD");
@@ -98,11 +96,9 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
   _display.printf("BAT:%3u%%", batPct);
   _display.drawFastHLine(0, 9, 128, SH110X_WHITE);
 
-  // --- Main Time Display ---
   _display.setTextSize(2);
   _display.setCursor(16, 14);
   
-  // Displays GPS time if fixed; otherwise shows fallback clock format
   if (gps.fixValid || (gps.hour > 0 || gps.minute > 0 || gps.second > 0)) {
     char timeBuffer[10];
     snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d", gps.hour, gps.minute, gps.second);
@@ -113,7 +109,6 @@ void DisplayManager::renderHome(const GPSData& gps, const String& temp, const St
 
   _display.drawFastHLine(0, 32, 128, SH110X_WHITE);
 
-  // --- Sensors & Connections ---
   _display.setTextSize(1);
   _display.setCursor(0, 36);
   _display.printf("TMP:%s | HUM:%s", temp.c_str(), hum.c_str());
@@ -196,7 +191,7 @@ void DisplayManager::renderSystemInfo(uint8_t batPct) {
   _display.display();
 }
 
-void DisplayManager::renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct) {
+void DisplayManager::renderRecording(const GPSData& gps, uint32_t elapsedTimeSec, uint16_t pointCount, uint8_t batPct, double totalDistMeters) {
   _display.clearDisplay();
   
   _display.setTextSize(1);
@@ -218,7 +213,7 @@ void DisplayManager::renderRecording(const GPSData& gps, uint32_t elapsedTimeSec
 
   _display.setCursor(0, 16);
   _display.printf("TIME: %02u:%02u:%02u\n", hrs, mins, secs);
-  _display.printf("SPD : %.1f km/h\n", gps.speedKmh);
+  _display.printf("DIST: %.1fm\n", totalDistMeters); // Live accumulated distance
   _display.printf("PTS : %u / 300\n", pointCount);
 
   if (gps.fixValid) {
@@ -230,7 +225,7 @@ void DisplayManager::renderRecording(const GPSData& gps, uint32_t elapsedTimeSec
   _display.display();
 }
 
-void DisplayManager::renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct) {
+void DisplayManager::renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct, double totalDistMeters) {
   _display.clearDisplay();
   _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
@@ -244,6 +239,7 @@ void DisplayManager::renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts,
 
   _display.setCursor(0, 16);
   _display.printf("Duration : %02u:%02u:%02u\n", hrs, mins, secs);
+  _display.printf("Distance : %.1fm\n", totalDistMeters); // <--- Total distance traveled
   _display.printf("Logged Pts: %u pts\n", totalPts);
   _display.printf("Battery   : %u%%\n", batPct);
   
@@ -252,7 +248,7 @@ void DisplayManager::renderTripSummary(uint32_t totalTimeSec, uint16_t totalPts,
   _display.display();
 }
 
-void DisplayManager::renderReturnSummary(uint32_t totalTimeSec, uint16_t ptsReturned, uint8_t batPct) {
+void DisplayManager::renderReturnSummary(uint32_t totalTimeSec, uint16_t totalPts, uint8_t batPct, double returnDistMeters) {
   _display.clearDisplay();
   _display.setTextColor(SH110X_WHITE, SH110X_BLACK);
   _display.setTextSize(1);
@@ -265,10 +261,11 @@ void DisplayManager::renderReturnSummary(uint32_t totalTimeSec, uint16_t ptsRetu
   uint32_t secs = totalTimeSec % 60;
 
   _display.setCursor(0, 16);
-  _display.printf("Return Time: %02u:%02u:%02u\n", hrs, mins, secs);
-  _display.printf("Nodes Nav  : %u pts\n", ptsReturned);
-  _display.printf("Battery    : %u%%\n", batPct);
-
+  _display.printf("Duration : %02u:%02u:%02u\n", hrs, mins, secs);
+  _display.printf("Distance : %.1fm\n", returnDistMeters); // <--- Return distance shown here
+  _display.printf("Waypoints: %u pts\n", totalPts);
+  _display.printf("Battery  : %u%%\n", batPct);
+  
   _display.setCursor(0, 52);
   _display.print("[Press BACK -> Home]");
   _display.display();
@@ -385,11 +382,9 @@ void DisplayManager::renderBatteryScreen(uint8_t batPct) {
   _display.printf("Status  : %s\n", batPct > 20 ? "NORMAL" : "LOW BATTERY!");
   _display.printf("Level   : %u%%\n\n", batPct);
 
-  // Draw a visual battery container box on the OLED
   _display.drawRect(14, 40, 100, 16, SH110X_WHITE);
-  _display.fillRect(114, 44, 4, 8, SH110X_WHITE); // Battery tip
+  _display.fillRect(114, 44, 4, 8, SH110X_WHITE);
   
-  // Fill width based on percentage (max fill area is 96 pixels wide)
   uint8_t fillWidth = (batPct * 96) / 100;
   _display.fillRect(16, 42, fillWidth, 12, SH110X_WHITE);
 
